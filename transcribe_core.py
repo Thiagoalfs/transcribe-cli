@@ -115,7 +115,7 @@ def load_api_key() -> str:
 
     raise TranscriptionError(
         "GROQ_API_KEY não configurada. Defina a variável de ambiente "
-        "ou adicione GROQ_API_KEY ao arquivo /opt/data/.env"
+        "ou adicione GROQ_API_KEY ao arquivo .env na raiz do projeto"
     )
 
 
@@ -169,9 +169,21 @@ def send_transcription_request(
     headers = {"Authorization": f"Bearer {api_key}"}
     data = build_request_data(language, target_language)
 
+    # Detectar MIME type baseado na extensão
+    mime_types = {
+        ".mp3": "audio/mpeg",
+        ".wav": "audio/wav",
+        ".m4a": "audio/mp4",
+        ".ogg": "audio/ogg",
+        ".webm": "audio/webm",
+        ".opus": "audio/ogg",
+        ".flac": "audio/flac",
+    }
+    mime_type = mime_types.get(file_path.suffix.lower(), "audio/mpeg")
+
     try:
         with open(file_path, "rb") as audio_file:
-            files = {"file": (file_path.name, audio_file, "audio/mpeg")}
+            files = {"file": (file_path.name, audio_file, mime_type)}
             response = requests.post(
                 GROQ_API_URL,
                 headers=headers,
@@ -282,7 +294,7 @@ def transcribe(
     Transcreve um arquivo de áudio usando a API do Groq.
 
     Esta é a função principal do módulo. Ela valida o arquivo, carrega a
-    chave da API, envie o áudio para transcrição e retorna os dados
+    chave da API, envia o áudio para transcrição e retorna os dados
     estruturados com timestamps.
 
     Args:

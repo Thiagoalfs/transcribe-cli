@@ -4,20 +4,7 @@ Converte dados de transcrição com timestamps em arquivo de texto simples,
 com cada linha contendo o timestamp de início entre colchetes seguido do texto.
 """
 from pathlib import Path
-from typing import TypedDict
-
-
-class SegmentRequired(TypedDict):
-    """Campos obrigatórios de um segmento."""
-
-    start: float
-    end: float
-
-
-class Segment(SegmentRequired, total=False):
-    """Representa um segmento de transcrição com timestamps."""
-
-    text: str
+from models import Segment
 
 
 OUTPUT_EXTENSION = ".txt"

@@ -38,11 +38,13 @@ pip install requests
 
 1. Crie uma conta em [Groq](https://groq.com)
 2. Gere uma API key em [console.groq.com](https://console.groq.com)
-3. Crie um arquivo `.env` na pasta do projeto:
+3. Crie um arquivo `.env` na **raiz do projeto** (não em `/opt/data/.env`):
 
 ```env
 GROQ_API_KEY=sua_chave_aqui
 ```
+
+> **Importante:** O arquivo `.env` está no `.gitignore` e não será enviado ao GitHub.
 
 ## Como usar
 

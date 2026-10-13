@@ -68,8 +68,12 @@ def get_choice(prompt, valid_choices):
         print(f"Opção inválida. Escolha uma de: {', '.join(valid_choices)}")
 
 
-def select_file():
-    """Abre o seletor de arquivo."""
+def select_file() -> str | None:
+    """Abre o seletor de arquivo.
+    
+    Returns:
+        Caminho do arquivo selecionado ou None.
+    """
     print("\nSelecione um arquivo de áudio...")
     print(f"Formatos suportados: {', '.join(sorted(get_supported_formats()))}")
     print()
@@ -93,8 +97,16 @@ def select_file():
         return file_path if file_path else None
 
 
-def select_language(prompt, default="auto"):
-    """Seleciona um idioma."""
+def select_language(prompt: str, default: str = "auto") -> str:
+    """Seleciona um idioma.
+    
+    Args:
+        prompt: Texto a exibir para o usuário.
+        default: Idioma padrão se o usuário não digitar nada.
+    
+    Returns:
+        Código do idioma selecionado.
+    """
     print(f"\n{prompt}")
     for code, name in IDIOMAS.items():
         print(f"  {code:<6} - {name}")
@@ -109,8 +121,12 @@ def select_language(prompt, default="auto"):
         print(f"Idioma inválido. Escolha uma das opções acima.")
 
 
-def display_transcript(result):
-    """Exibe o resultado da transcrição."""
+def display_transcript(result: dict) -> None:
+    """Exibe o resultado da transcrição.
+    
+    Args:
+        result: Dicionário com dados da transcrição.
+    """
     if not result:
         return
 
@@ -209,7 +225,7 @@ def display_grouped_preview(grouped_segments):
     print()
 
 
-def post_transcript_menu(result, source_lang, target_lang, file_path):
+def post_transcript_menu(result):
     """Menu pós-transcrição."""
     grouped_segments = result.get("segments", []) if result else []
     
@@ -254,7 +270,7 @@ def post_transcript_menu(result, source_lang, target_lang, file_path):
             break
 
 
-def show_history():
+def show_history() -> None:
     """Mostra o histórico de transcrições."""
     print("\n" + "=" * 100)
     print("  Histórico de Transcrições")
@@ -270,7 +286,7 @@ def show_history():
     print()
 
 
-def do_transcribe():
+def do_transcribe() -> None:
     """Fluxo de transcrição."""
     # Selecionar arquivo
     file_path = select_file()
@@ -281,6 +297,14 @@ def do_transcribe():
 
     if not os.path.exists(file_path):
         print(f"Arquivo não encontrado: {file_path}")
+        input("\nPressione Enter para continuar...")
+        return
+
+    # Validar extensão do arquivo
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext not in get_supported_formats():
+        print(f"Formato não suportado: {ext}")
+        print(f"Formatos aceitos: {', '.join(sorted(get_supported_formats()))}")
         input("\nPressione Enter para continuar...")
         return
 
@@ -306,13 +330,13 @@ def do_transcribe():
         word_count = len(result.get("text", "").split())
         add_entry(filename, source_lang, target_lang, duration, word_count, file_path)
 
-        post_transcript_menu(result, source_lang, target_lang, file_path)
+        post_transcript_menu(result)
     else:
         print("Falha na transcrição.")
         input("\nPressione Enter para continuar...")
 
 
-def main():
+def main() -> None:
     """Loop principal da CLI."""
     while True:
         print_header()
