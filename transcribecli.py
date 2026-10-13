@@ -324,15 +324,6 @@ def do_transcribe() -> None:
     print_header()
     print(f"Arquivo selecionado: {os.path.basename(file_path)}")
     print(f"Caminho: {file_path}")
-    print()
-
-    # Confirmar e transcrever
-    confirm = input("Confirmar transcrição? (s/n): ").strip().lower()
-    if confirm != 's':
-        print("Transcrição cancelada.")
-        input("\nPressione Enter para continuar...")
-        return
-
     print("\nTranscrevendo com detecção automática de idioma...")
     try:
         result = transcribe(file_path)
