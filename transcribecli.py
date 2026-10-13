@@ -230,7 +230,9 @@ def post_transcript_menu(result):
     grouped_segments = result.get("segments", []) if result else []
     
     while True:
-        print("Opções:")
+        clear_screen()
+        print_header()
+        print("Opções pós-transcrição:")
         print("  1. Configurar palavras por timestamp")
         print("  2. Exportar SRT")
         print("  3. Exportar TXT")
@@ -250,8 +252,11 @@ def post_transcript_menu(result):
                 except ValueError:
                     print("Digite um número válido.")
             grouped_segments = group_segments_by_words(result["segments"], words)
+            clear_screen()
+            print_header()
             display_grouped_preview(grouped_segments)
             print(f"Configurado: {words} palavras por timestamp")
+            input("\nPressione Enter para continuar...")
         elif choice == "2":
             if grouped_segments:
                 output_path = TRANSCRIPTS_DIR / "transcript.srt"
@@ -259,6 +264,7 @@ def post_transcript_menu(result):
                 print(f"SRT exportado: {output_path}")
             else:
                 print("Erro: sem dados para exportar")
+            input("\nPressione Enter para continuar...")
         elif choice == "3":
             if grouped_segments:
                 output_path = TRANSCRIPTS_DIR / "transcript.txt"
@@ -266,15 +272,17 @@ def post_transcript_menu(result):
                 print(f"TXT exportado: {output_path}")
             else:
                 print("Erro: sem dados para exportar")
+            input("\nPressione Enter para continuar...")
         elif choice == "4":
             break
 
 
 def show_history() -> None:
     """Mostra o histórico de transcrições."""
-    print("\n" + "=" * 100)
-    print("  Histórico de Transcrições")
-    print("=" * 100)
+    clear_screen()
+    print_header()
+    print("Histórico de Transcrições")
+    print("=" * 60)
     print()
 
     entries = list_entries()
@@ -288,6 +296,9 @@ def show_history() -> None:
 
 def do_transcribe() -> None:
     """Fluxo de transcrição."""
+    clear_screen()
+    print_header()
+    
     # Selecionar arquivo
     file_path = select_file()
     if not file_path:
@@ -308,11 +319,31 @@ def do_transcribe() -> None:
         input("\nPressione Enter para continuar...")
         return
 
+    # Mostrar arquivo selecionado
+    clear_screen()
+    print_header()
+    print(f"Arquivo selecionado: {os.path.basename(file_path)}")
+    print(f"Caminho: {file_path}")
+    print()
+
     # Selecionar idiomas
     source_lang = select_language("Idioma de origem:")
     target_lang = select_language("Idioma de saída (deixe igual para não traduzir):")
 
-    # Transcrever
+    # Confirmar e transcrever
+    clear_screen()
+    print_header()
+    print(f"Arquivo: {os.path.basename(file_path)}")
+    print(f"Idioma de origem: {IDIOMAS.get(source_lang, source_lang)}")
+    print(f"Idioma de destino: {IDIOMAS.get(target_lang, target_lang)}")
+    print()
+    
+    confirm = input("Confirmar transcrição? (s/n): ").strip().lower()
+    if confirm != 's':
+        print("Transcrição cancelada.")
+        input("\nPressione Enter para continuar...")
+        return
+
     print("\nTranscrevendo...")
     try:
         result = transcribe(file_path, source_lang, target_lang)
@@ -322,6 +353,8 @@ def do_transcribe() -> None:
         return
 
     if result:
+        clear_screen()
+        print_header()
         display_transcript(result)
 
         # Adicionar ao histórico
