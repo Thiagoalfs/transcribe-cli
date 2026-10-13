@@ -225,9 +225,15 @@ def display_grouped_preview(grouped_segments):
     print()
 
 
-def post_transcript_menu(result):
-    """Menu pós-transcrição."""
+def post_transcript_menu(result, file_path):
+    """Menu pós-transcrição.
+    
+    Args:
+        result: Dicionário com dados da transcrição.
+        file_path: Caminho do arquivo de áudio original.
+    """
     grouped_segments = result.get("segments", []) if result else []
+    base_name = Path(file_path).stem
     
     while True:
         clear_screen()
@@ -259,7 +265,7 @@ def post_transcript_menu(result):
             input("\nPressione Enter para continuar...")
         elif choice == "2":
             if grouped_segments:
-                output_path = TRANSCRIPTS_DIR / "transcript.srt"
+                output_path = TRANSCRIPTS_DIR / f"{base_name}.srt"
                 export_srt(grouped_segments, output_path)
                 print(f"SRT exportado: {output_path}")
             else:
@@ -267,7 +273,7 @@ def post_transcript_menu(result):
             input("\nPressione Enter para continuar...")
         elif choice == "3":
             if grouped_segments:
-                output_path = TRANSCRIPTS_DIR / "transcript.txt"
+                output_path = TRANSCRIPTS_DIR / f"{base_name}.txt"
                 export_txt(grouped_segments, output_path)
                 print(f"TXT exportado: {output_path}")
             else:
@@ -345,7 +351,7 @@ def do_transcribe() -> None:
         add_entry(filename, detected_lang, detected_lang, duration, word_count, file_path)
 
         input("\nPressione Enter para continuar...")
-        post_transcript_menu(result)
+        post_transcript_menu(result, file_path)
     else:
         print("Falha na transcrição.")
         input("\nPressione Enter para continuar...")
