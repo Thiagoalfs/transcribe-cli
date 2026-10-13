@@ -17,7 +17,7 @@ RESPONSE_FORMAT = "verbose_json"
 DEFAULT_LANGUAGE = "auto"
 SUPPORTED_LANGUAGES = {"auto", "pt", "en", "es", "fr", "de", "it", "zh", "ja", "ko"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg", ".webm", ".opus", ".flac"}
-ENV_FILE_PATH = Path("/opt/data/.env")
+ENV_FILE_PATH = Path(__file__).parent / ".env"
 REQUEST_TIMEOUT = 120  # segundos
 
 
