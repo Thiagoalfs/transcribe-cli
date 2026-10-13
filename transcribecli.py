@@ -363,6 +363,7 @@ def do_transcribe() -> None:
         word_count = len(result.get("text", "").split())
         add_entry(filename, source_lang, target_lang, duration, word_count, file_path)
 
+        input("\nPressione Enter para continuar...")
         post_transcript_menu(result)
     else:
         print("Falha na transcrição.")
