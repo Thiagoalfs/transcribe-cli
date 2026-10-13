@@ -172,11 +172,19 @@ def group_segments_by_words(segments, words_per_group):
     
     # Adicionar palavras restantes
     if current_words:
+        # Garantir que end > start (evita erro de validação)
+        if current_end <= current_start:
+            current_end = current_start + 0.01
         grouped.append({
             "start": current_start,
             "end": current_end,
             "text": " ".join(current_words)
         })
+    
+    # Corrigir todos os segmentos onde start == end
+    for seg in grouped:
+        if seg["end"] <= seg["start"]:
+            seg["end"] = seg["start"] + 0.01
     
     return grouped
 
