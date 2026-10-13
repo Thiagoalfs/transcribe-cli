@@ -17,7 +17,7 @@ from history import add_entry, list_entries, display_history_table, clear_histor
 
 # ─── Constantes ────────────────────────────────────────────────────────────────
 
-TRANSCRIPTS_DIR = Path.home() / ".turbotranscribe" / "transcripts"
+TRANSCRIPTS_DIR = Path.home() / "Downloads" / "transcribercli"
 TRANSCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
 
 IDIOMAS = {
@@ -133,8 +133,73 @@ def format_time(seconds):
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
+def group_segments_by_words(segments, words_per_group):
+    """Agrupa segmentos por quantidade de palavras.
+    
+    Args:
+        segments: Lista de segmentos com start, end, text.
+        words_per_group: Quantidade de palavras por grupo.
+    
+    Returns:
+        Lista de segmentos agrupados.
+    """
+    if not segments or words_per_group <= 0:
+        return segments
+    
+    grouped = []
+    current_words = []
+    current_start = segments[0]["start"]
+    current_end = segments[0]["end"]
+    
+    for segment in segments:
+        text = segment.get("text", "").strip()
+        if not text:
+            continue
+        
+        words = text.split()
+        for word in words:
+            current_words.append(word)
+            current_end = segment["end"]
+            
+            if len(current_words) >= words_per_group:
+                grouped.append({
+                    "start": current_start,
+                    "end": current_end,
+                    "text": " ".join(current_words)
+                })
+                current_words = []
+                current_start = current_end
+    
+    # Adicionar palavras restantes
+    if current_words:
+        grouped.append({
+            "start": current_start,
+            "end": current_end,
+            "text": " ".join(current_words)
+        })
+    
+    return grouped
+
+
+def display_grouped_preview(grouped_segments):
+    """Exibe preview da transcrição agrupada."""
+    print("\n" + "=" * 60)
+    print("  Preview da Transcrição Agrupada")
+    print("=" * 60)
+    print()
+    
+    for segment in grouped_segments:
+        start = segment.get("start", 0)
+        text = segment.get("text", "").strip()
+        print(f"[{format_time(start)}] {text}")
+    
+    print()
+
+
 def post_transcript_menu(result, source_lang, target_lang, file_path):
     """Menu pós-transcrição."""
+    grouped_segments = result.get("segments", []) if result else []
+    
     while True:
         print("Opções:")
         print("  1. Configurar palavras por timestamp")
@@ -147,18 +212,20 @@ def post_transcript_menu(result, source_lang, target_lang, file_path):
 
         if choice == "1":
             words = int(input("Quantas palavras por timestamp? ").strip())
+            grouped_segments = group_segments_by_words(result["segments"], words)
+            display_grouped_preview(grouped_segments)
             print(f"Configurado: {words} palavras por timestamp")
         elif choice == "2":
-            if result and result.get("segments"):
+            if grouped_segments:
                 output_path = TRANSCRIPTS_DIR / "transcript.srt"
-                export_srt(result["segments"], output_path)
+                export_srt(grouped_segments, output_path)
                 print(f"SRT exportado: {output_path}")
             else:
                 print("Erro: sem dados para exportar")
         elif choice == "3":
-            if result and result.get("segments"):
+            if grouped_segments:
                 output_path = TRANSCRIPTS_DIR / "transcript.txt"
-                export_txt(result["segments"], output_path)
+                export_txt(grouped_segments, output_path)
                 print(f"TXT exportado: {output_path}")
             else:
                 print("Erro: sem dados para exportar")
