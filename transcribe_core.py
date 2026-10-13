@@ -119,12 +119,13 @@ def load_api_key() -> str:
     )
 
 
-def build_request_data(language: str) -> dict:
+def build_request_data(language: str, target_language: Optional[str] = None) -> dict:
     """
     Constrói os dados da requisição para a API do Groq.
 
     Args:
-        language: Código do idioma (ou 'auto' para detecção automática).
+        language: Código do idioma de origem (ou 'auto' para detecção automática).
+        target_language: Código do idioma de destino (para tradução).
 
     Returns:
         Dicionário com os dados da requisição.
@@ -137,6 +138,10 @@ def build_request_data(language: str) -> dict:
     if language != DEFAULT_LANGUAGE:
         data["language"] = language
 
+    # Se target_language for diferente de language, ativa tradução
+    if target_language and target_language != language:
+        data["translate"] = True
+
     return data
 
 
@@ -144,6 +149,7 @@ def send_transcription_request(
     file_path: Path,
     api_key: str,
     language: str,
+    target_language: Optional[str] = None,
 ) -> dict:
     """
     Envia o arquivo de áudio para a API do Groq.
@@ -151,7 +157,8 @@ def send_transcription_request(
     Args:
         file_path: Caminho do arquivo de áudio.
         api_key: Chave da API do Groq.
-        language: Código do idioma.
+        language: Código do idioma de origem.
+        target_language: Código do idioma de destino (para tradução).
 
     Returns:
         Resposta da API como dicionário.
@@ -160,7 +167,7 @@ def send_transcription_request(
         TranscriptionError: Se a requisição falhar.
     """
     headers = {"Authorization": f"Bearer {api_key}"}
-    data = build_request_data(language)
+    data = build_request_data(language, target_language)
 
     try:
         with open(file_path, "rb") as audio_file:
@@ -269,18 +276,21 @@ def parse_transcription_response(response: dict) -> dict:
 def transcribe(
     file_path: str,
     language: str = DEFAULT_LANGUAGE,
+    target_language: Optional[str] = None,
 ) -> dict:
     """
     Transcreve um arquivo de áudio usando a API do Groq.
 
     Esta é a função principal do módulo. Ela valida o arquivo, carrega a
-    chave da API, envia o áudio para transcrição e retorna os dados
+    chave da API, envie o áudio para transcrição e retorna os dados
     estruturados com timestamps.
 
     Args:
         file_path: Caminho do arquivo de áudio (mp3, wav, m4a, ogg, webm, opus, flac).
         language: Código do idioma ('pt', 'en', 'es', etc.) ou 'auto' para
                   detecção automática. Padrão: 'auto'.
+        target_language: Código do idioma de destino para tradução (ex: 'en').
+                        Se None ou igual a 'language', não traduz.
 
     Returns:
         Dicionário com:
@@ -293,7 +303,7 @@ def transcribe(
         TranscriptionError: Se qualquer etapa da transcrição falhar.
 
     Example:
-        >>> resultado = transcribe("audio.mp3", language="pt")
+        >>> resultado = transcribe("audio.mp3", language="pt", target_language="en")
         >>> print(resultado["text"])
         >>> for seg in resultado["segments"]:
         ...     print(f"[{seg['start']:.1f}s] {seg['text']}")
@@ -301,12 +311,14 @@ def transcribe(
     # Validações
     path = validate_audio_file(file_path)
     lang = validate_language(language)
+    if target_language is not None:
+        target_language = validate_language(target_language)
 
     # Carrega chave da API
     api_key = load_api_key()
 
     # Envia requisição
-    response = send_transcription_request(path, api_key, lang)
+    response = send_transcription_request(path, api_key, lang, target_language)
 
     # Processa resposta
     return parse_transcription_response(response)

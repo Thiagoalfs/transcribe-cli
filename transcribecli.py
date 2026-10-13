@@ -10,10 +10,10 @@ from pathlib import Path
 # Adicionar diretório atual ao path para imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from transcribe_core import transcribe, TranscriptionError, get_supported_languages, get_supported_formats
+from transcribe_core import transcribe, TranscriptionError, get_supported_formats
 from export_srt import export_srt
 from export_txt import export_txt
-from history import add_entry, list_entries, display_history_table, clear_history
+from history import add_entry, list_entries, display_history_table
 
 # ─── Constantes ────────────────────────────────────────────────────────────────
 
@@ -100,8 +100,13 @@ def select_language(prompt, default="auto"):
         print(f"  {code:<6} - {name}")
     print()
 
-    lang = input(f"Idioma [{default}]: ").strip().lower()
-    return lang if lang else default
+    while True:
+        lang = input(f"Idioma [{default}]: ").strip().lower()
+        if not lang:
+            return default
+        if lang in IDIOMAS:
+            return lang
+        print(f"Idioma inválido. Escolha uma das opções acima.")
 
 
 def display_transcript(result):
@@ -219,7 +224,15 @@ def post_transcript_menu(result, source_lang, target_lang, file_path):
         choice = get_choice("Escolha: ", ["1", "2", "3", "4"])
 
         if choice == "1":
-            words = int(input("Quantas palavras por timestamp? ").strip())
+            while True:
+                try:
+                    words = int(input("Quantas palavras por timestamp? ").strip())
+                    if words <= 0:
+                        print("Digite um número maior que zero.")
+                        continue
+                    break
+                except ValueError:
+                    print("Digite um número válido.")
             grouped_segments = group_segments_by_words(result["segments"], words)
             display_grouped_preview(grouped_segments)
             print(f"Configurado: {words} palavras por timestamp")
@@ -278,7 +291,7 @@ def do_transcribe():
     # Transcrever
     print("\nTranscrevendo...")
     try:
-        result = transcribe(file_path, source_lang)
+        result = transcribe(file_path, source_lang, target_lang)
     except TranscriptionError as e:
         print(f"Erro: {e}")
         input("\nPressione Enter para continuar...")
