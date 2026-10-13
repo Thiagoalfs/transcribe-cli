@@ -326,27 +326,16 @@ def do_transcribe() -> None:
     print(f"Caminho: {file_path}")
     print()
 
-    # Selecionar idiomas
-    source_lang = select_language("Idioma de origem:")
-    target_lang = select_language("Idioma de saída (deixe igual para não traduzir):")
-
     # Confirmar e transcrever
-    clear_screen()
-    print_header()
-    print(f"Arquivo: {os.path.basename(file_path)}")
-    print(f"Idioma de origem: {IDIOMAS.get(source_lang, source_lang)}")
-    print(f"Idioma de destino: {IDIOMAS.get(target_lang, target_lang)}")
-    print()
-    
     confirm = input("Confirmar transcrição? (s/n): ").strip().lower()
     if confirm != 's':
         print("Transcrição cancelada.")
         input("\nPressione Enter para continuar...")
         return
 
-    print("\nTranscrevendo...")
+    print("\nTranscrevendo com detecção automática de idioma...")
     try:
-        result = transcribe(file_path, source_lang, target_lang)
+        result = transcribe(file_path)
     except TranscriptionError as e:
         print(f"Erro: {e}")
         input("\nPressione Enter para continuar...")
@@ -361,7 +350,8 @@ def do_transcribe() -> None:
         filename = os.path.basename(file_path)
         duration = result.get("duration", 0)
         word_count = len(result.get("text", "").split())
-        add_entry(filename, source_lang, target_lang, duration, word_count, file_path)
+        detected_lang = result.get("language", "auto")
+        add_entry(filename, detected_lang, detected_lang, duration, word_count, file_path)
 
         input("\nPressione Enter para continuar...")
         post_transcript_menu(result)
