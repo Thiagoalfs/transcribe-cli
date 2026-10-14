@@ -294,10 +294,93 @@ def show_history() -> None:
     entries = list_entries()
     if not entries:
         print("Nenhuma transcrição encontrada.")
+        input("\nPressione Enter para continuar...")
         return
 
     display_history_table(entries)
     print()
+
+    # Permitir selecionar um item
+    choice = input("Selecione um número para ver detalhes (ou Enter para voltar): ").strip()
+    if not choice:
+        return
+
+    try:
+        idx = int(choice) - 1
+        if 0 <= idx < len(entries):
+            show_history_detail(entries[idx])
+        else:
+            print("Número inválido.")
+            input("\nPressione Enter para continuar...")
+    except ValueError:
+        print("Entrada inválida.")
+        input("\nPressione Enter para continuar...")
+
+
+def show_history_detail(entry: dict) -> None:
+    """Mostra detalhes de uma entrada do histórico."""
+    clear_screen()
+    print_header()
+    print("Detalhes da Transcrição")
+    print("=" * 60)
+    print()
+
+    print(f"Arquivo: {entry.get('filename', 'N/A')}")
+    print(f"Data: {entry.get('date', 'N/A')[:19].replace('T', ' ')}")
+    print(f"Idioma: {entry.get('source_language', 'N/A')}")
+    print(f"Duração: {int(entry.get('duration', 0) // 60)}:{int(entry.get('duration', 0) % 60):02d}")
+    print(f"Palavras: {entry.get('word_count', 0)}")
+    print(f"Caminho: {entry.get('file_path', 'N/A')}")
+    print()
+
+    # Verificar se o arquivo de transcrição existe
+    file_path = entry.get('file_path', '')
+    base_name = Path(file_path).stem if file_path else ''
+    srt_path = TRANSCRIPTS_DIR / f"{base_name}.srt"
+    txt_path = TRANSCRIPTS_DIR / f"{base_name}.txt"
+
+    if srt_path.exists() or txt_path.exists():
+        print("Opções:")
+        print("  1. Ver preview da transcrição")
+        print("  2. Exportar SRT")
+        print("  3. Exportar TXT")
+        print("  4. Voltar")
+        print()
+
+        choice = get_choice("Escolha: ", ["1", "2", "3", "4"])
+
+        if choice == "1":
+            # Mostrar preview do arquivo TXT se existir
+            if txt_path.exists():
+                clear_screen()
+                print_header()
+                print("Preview da Transcrição")
+                print("=" * 60)
+                print()
+                with open(txt_path, 'r', encoding='utf-8') as f:
+                    print(f.read())
+                input("\nPressione Enter para continuar...")
+            else:
+                print("Arquivo TXT não encontrado.")
+                input("\nPressione Enter para continuar...")
+        elif choice == "2":
+            if srt_path.exists():
+                print(f"SRT já existe: {srt_path}")
+            else:
+                print("SRT não encontrado. Transcreva novamente para gerar.")
+            input("\nPressione Enter para continuar...")
+        elif choice == "3":
+            if txt_path.exists():
+                print(f"TXT já existe: {txt_path}")
+            else:
+                print("TXT não encontrado. Transcreva novamente para gerar.")
+            input("\nPressione Enter para continuar...")
+        elif choice == "4":
+            return
+    else:
+        print("Arquivos de transcrição não encontrados.")
+        print("Transcreva novamente para gerar os arquivos.")
+        input("\nPressione Enter para continuar...")
 
 
 def do_transcribe() -> None:
