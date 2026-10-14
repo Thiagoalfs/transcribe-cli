@@ -9,7 +9,6 @@ import time
 import threading
 from pathlib import Path
 
-# Adicionar diretório atual ao path para imports
 sys.path.insert(0, str(Path(__file__).parent))
 
 from transcribe_core import transcribe, TranscriptionError, get_supported_formats
@@ -17,473 +16,337 @@ from export_srt import export_srt
 from export_txt import export_txt
 from history import add_entry, list_entries, display_history_table
 
-# ─── Constants ─────────────────────────────────────────────────────────────────
-
 TRANSCRIPTS_DIR = Path(__file__).parent / "history"
 TRANSCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-# ─── Utilities ────────────────────────────────────────────────────────────────
-
-def clear_screen():
-    """Clear the screen."""
+def clear():
     os.system('cls' if os.name == 'nt' else 'clear')
 
 
-def print_header():
-    """Print the header."""
-    clear_screen()
-    print("=" * 60)
-    print("  TranscribeCLI - Audio Transcription with Timestamps")
-    print("=" * 60)
+def header():
+    clear()
+    print("─" * 50)
+    print("  TranscribeCLI")
+    print("─" * 50)
     print()
 
 
-def print_menu():
-    """Print the main menu."""
-    print("Options:")
-    print("  1. Transcribe")
-    print("  2. History")
-    print("  0. Quit")
+def menu():
+    print("1. Transcribe")
+    print("2. History")
+    print("0. Quit")
     print()
 
 
-def get_choice(prompt, valid_choices):
-    """Get a valid choice from the user."""
+def get_choice(prompt, valid):
     while True:
-        choice = input(prompt).strip()
-        if choice in valid_choices:
-            return choice
-        print(f"Invalid option. Choose one of: {', '.join(valid_choices)}")
+        c = input(prompt).strip()
+        if c in valid:
+            return c
+        print(f"Invalid. Choose: {', '.join(valid)}")
 
 
-def select_file() -> str | None:
-    """Open the file selector.
-    
-    Returns:
-        Selected file path or None.
-    """
-    print("\nSelect an audio file...")
-    print(f"Supported formats: {', '.join(sorted(get_supported_formats()))}")
-    print()
-
+def select_file():
+    print("Select an audio file...")
+    print(f"Formats: {', '.join(sorted(get_supported_formats()))}\n")
     try:
         import tkinter as tk
         from tkinter import filedialog
         root = tk.Tk()
         root.withdraw()
-        file_path = filedialog.askopenfilename(
+        path = filedialog.askopenfilename(
             title="Select an audio file",
-            filetypes=[
-                ("Audio files", " ".join(f"*{ext}" for ext in get_supported_formats())),
-                ("All files", "*.*")
-            ]
+            filetypes=[("Audio", " ".join(f"*{e}" for e in get_supported_formats())), ("All", "*.*")]
         )
         root.destroy()
-        return file_path if file_path else None
+        return path if path else None
     except ImportError:
-        file_path = input("File path: ").strip()
-        return file_path if file_path else None
+        return input("File path: ").strip() or None
 
 
-def animate_dots(stop_event):
-    """Animate dots during transcription."""
+def animate(stop):
     dots = 0
-    while not stop_event.is_set():
+    while not stop.is_set():
         print(f"\rTranscribing{'.' * dots}   ", end="", flush=True)
         dots = (dots + 1) % 4
         time.sleep(0.5)
 
 
-def format_time(seconds):
-    """Format seconds to HH:MM:SS."""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+def fmt_time(s):
+    h = int(s // 3600)
+    m = int((s % 3600) // 60)
+    sec = int(s % 60)
+    return f"{h:02d}:{m:02d}:{sec:02d}"
 
 
-def group_segments_by_words(segments, words_per_group):
-    """Group segments by word count.
-    
-    Args:
-        segments: List of segments with start, end, text.
-        words_per_group: Number of words per group.
-    
-    Returns:
-        List of grouped segments.
-    """
-    if not segments or words_per_group <= 0:
+def group_words(segments, n):
+    if not segments or n <= 0:
         return segments
-    
     grouped = []
-    current_words = []
-    current_start = segments[0]["start"]
-    current_end = segments[0]["end"]
-    
-    for segment in segments:
-        text = segment.get("text", "").strip()
+    words = []
+    start = segments[0]["start"]
+    end = segments[0]["end"]
+    for seg in segments:
+        text = seg.get("text", "").strip()
         if not text:
             continue
-        
-        words = text.split()
-        for word in words:
-            current_words.append(word)
-            current_end = segment["end"]
-            
-            if len(current_words) >= words_per_group:
-                grouped.append({
-                    "start": current_start,
-                    "end": current_end,
-                    "text": " ".join(current_words)
-                })
-                current_words = []
-                current_start = current_end
-    
-    # Add remaining words
-    if current_words:
-        if current_end <= current_start:
-            current_end = current_start + 0.01
-        grouped.append({
-            "start": current_start,
-            "end": current_end,
-            "text": " ".join(current_words)
-        })
-    
-    # Fix all segments where start == end
-    for seg in grouped:
-        if seg["end"] <= seg["start"]:
-            seg["end"] = seg["start"] + 0.01
-    
+        for w in text.split():
+            words.append(w)
+            end = seg["end"]
+            if len(words) >= n:
+                grouped.append({"start": start, "end": end, "text": " ".join(words)})
+                words = []
+                start = end
+    if words:
+        if end <= start:
+            end = start + 0.01
+        grouped.append({"start": start, "end": end, "text": " ".join(words)})
+    for g in grouped:
+        if g["end"] <= g["start"]:
+            g["end"] = g["start"] + 0.01
     return grouped
 
 
-def save_history_txt(result, file_path):
-    """Save TXT to the history folder in the script directory."""
-    base_name = Path(file_path).stem
-    output_path = TRANSCRIPTS_DIR / f"{base_name}.txt"
-    
-    segments = result.get("segments", [])
-    with open(output_path, 'w', encoding='utf-8') as f:
-        for segment in segments:
-            start = segment.get("start", 0)
-            text = segment.get("text", "").strip()
-            f.write(f"[{format_time(start)}] {text}\n")
-    
-    return output_path
+def save_txt(result, file_path):
+    base = Path(file_path).stem
+    path = TRANSCRIPTS_DIR / f"{base}.txt"
+    with open(path, 'w', encoding='utf-8') as f:
+        for seg in result.get("segments", []):
+            f.write(f"[{fmt_time(seg.get('start', 0))}] {seg.get('text', '').strip()}\n")
+    return path
 
 
-def post_transcript_menu(result, file_path):
-    """Post-transcription menu."""
-    grouped_segments = result.get("segments", []) if result else []
-    base_name = Path(file_path).stem
-    
+def show_segments(segments):
+    for seg in segments:
+        print(f"[{fmt_time(seg.get('start', 0))}] {seg.get('text', '').strip()}")
+    print()
+
+
+def post_menu(result, file_path):
+    segments = result.get("segments", []) if result else []
+    base = Path(file_path).stem
+
     while True:
-        print("Options:")
-        print("  1. Segment words")
-        print("  2. Export SRT")
-        print("  3. Export TXT")
-        print("  0. Go to main menu")
+        clear()
+        header()
+        show_segments(segments)
+
+        print("1. Segment words")
+        print("2. Export SRT")
+        print("3. Export TXT")
+        print("0. Main menu")
         print()
 
-        choice = get_choice("Choice: ", ["1", "2", "3", "0"])
+        c = get_choice("> ", ["1", "2", "3", "0"])
 
-        if choice == "1":
-            # Segment words - SAME SCREEN
-            clear_screen()
-            print_header()
-            print("Segment Words")
-            print("=" * 60)
-            print()
-            
-            # Show current preview
-            if grouped_segments:
-                print("Current segmentation:")
-                for segment in grouped_segments:
-                    start = segment.get("start", 0)
-                    text = segment.get("text", "").strip()
-                    print(f"[{format_time(start)}] {text}")
-                print()
-            
+        if c == "1":
+            clear()
+            header()
+            show_segments(segments)
             while True:
                 try:
-                    words = int(input("Words per segment: ").strip())
-                    if words <= 0:
-                        print("Enter a number greater than zero.")
-                        continue
-                    break
+                    n = int(input("Words per segment: ").strip())
+                    if n > 0:
+                        break
+                    print("Enter a number > 0.")
                 except ValueError:
                     print("Enter a valid number.")
-            
-            grouped_segments = group_segments_by_words(result["segments"], words)
-            
-            # Save updated TXT
-            txt_path = TRANSCRIPTS_DIR / f"{base_name}.txt"
-            with open(txt_path, 'w', encoding='utf-8') as f:
-                for segment in grouped_segments:
-                    start = segment.get("start", 0)
-                    text = segment.get("text", "").strip()
-                    f.write(f"[{format_time(start)}] {text}\n")
-            
-            # Return to point 3 (preview + options)
-            clear_screen()
-            print_header()
-            print("Transcription Result")
-            print("=" * 60)
-            print()
-            
-            for segment in grouped_segments:
-                start = segment.get("start", 0)
-                text = segment.get("text", "").strip()
-                print(f"[{format_time(start)}] {text}")
-            
-            print()
-            continue
-            
-        elif choice == "2":
-            if grouped_segments:
-                output_path = TRANSCRIPTS_DIR / f"{base_name}.srt"
-                export_srt(grouped_segments, output_path)
-                print(f"SRT exported: {output_path}")
+            segments = group_words(result["segments"], n)
+            with open(TRANSCRIPTS_DIR / f"{base}.txt", 'w', encoding='utf-8') as f:
+                for seg in segments:
+                    f.write(f"[{fmt_time(seg.get('start', 0))}] {seg.get('text', '').strip()}\n")
+        elif c == "2":
+            if segments:
+                p = TRANSCRIPTS_DIR / f"{base}.srt"
+                export_srt(segments, p)
+                print(f"Saved: {p}")
             else:
-                print("Error: no data to export")
-            input("\nPress Enter to continue...")
-        elif choice == "3":
-            if grouped_segments:
-                output_path = TRANSCRIPTS_DIR / f"{base_name}.txt"
-                export_txt(grouped_segments, output_path)
-                print(f"TXT exported: {output_path}")
+                print("No data.")
+            input("\nPress Enter...")
+        elif c == "3":
+            if segments:
+                p = TRANSCRIPTS_DIR / f"{base}.txt"
+                export_txt(segments, p)
+                print(f"Saved: {p}")
             else:
-                print("Error: no data to export")
-            input("\nPress Enter to continue...")
-        elif choice == "0":
+                print("No data.")
+            input("\nPress Enter...")
+        elif c == "0":
             break
 
 
-def show_history() -> None:
-    """Show transcription history."""
-    clear_screen()
-    print_header()
-    print("Transcription History")
-    print("=" * 60)
-    print()
-
+def show_history():
+    clear()
+    header()
     entries = list_entries()
     if not entries:
         print("No transcriptions found.")
-        input("\nPress Enter to continue...")
+        input("\nPress Enter...")
         return
 
     display_history_table(entries)
     print()
-
-    # Allow selecting an item
-    choice = input("Select a number to view details (or Enter to go back): ").strip()
-    if not choice:
+    c = input("Select number (Enter to go back): ").strip()
+    if not c:
         return
-
     try:
-        idx = int(choice) - 1
+        idx = int(c) - 1
         if 0 <= idx < len(entries):
-            show_history_detail(entries[idx])
+            show_detail(entries[idx])
         else:
             print("Invalid number.")
-            input("\nPress Enter to continue...")
+            input("\nPress Enter...")
     except ValueError:
         print("Invalid input.")
-        input("\nPress Enter to continue...")
+        input("\nPress Enter...")
 
 
-def show_history_detail(entry: dict) -> None:
-    """Show transcription preview and options directly."""
-    file_path = entry.get('file_path', '')
-    base_name = Path(file_path).stem if file_path else ''
-    txt_path = TRANSCRIPTS_DIR / f"{base_name}.txt"
-    srt_path = TRANSCRIPTS_DIR / f"{base_name}.srt"
+def show_detail(entry):
+    fp = entry.get('file_path', '')
+    base = Path(fp).stem if fp else ''
+    txt_path = TRANSCRIPTS_DIR / f"{base}.txt"
+    srt_path = TRANSCRIPTS_DIR / f"{base}.srt"
 
     if not txt_path.exists() and not srt_path.exists():
-        clear_screen()
-        print_header()
-        print("Transcription files not found.")
-        print("Transcribe again to generate the files.")
-        input("\nPress Enter to continue...")
+        clear()
+        header()
+        print("Files not found. Transcribe again.")
+        input("\nPress Enter...")
         return
 
-    # Load segments from TXT or SRT
     segments = []
     if txt_path.exists():
         with open(txt_path, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
                 if line.startswith('[') and '] ' in line:
-                    timestamp_end = line.index('] ')
-                    timestamp = line[1:timestamp_end]
-                    text = line[timestamp_end + 2:]
-                    # Parse HH:MM:SS to seconds
-                    parts = timestamp.split(':')
-                    seconds = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-                    segments.append({"start": seconds, "end": seconds + 1, "text": text})
+                    ts_end = line.index('] ')
+                    ts = line[1:ts_end]
+                    text = line[ts_end + 2:]
+                    parts = ts.split(':')
+                    secs = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                    segments.append({"start": secs, "end": secs + 1, "text": text})
 
     while True:
-        clear_screen()
-        print_header()
-        print("Transcription Preview")
-        print("=" * 60)
+        clear()
+        header()
+        show_segments(segments)
+
+        print("1. Segment words")
+        print("2. Export SRT")
+        print("3. Export TXT")
+        print("0. Go back")
         print()
 
-        if segments:
-            for segment in segments:
-                start = segment.get("start", 0)
-                text = segment.get("text", "").strip()
-                print(f"[{format_time(start)}] {text}")
-        else:
-            print("No preview available.")
+        c = get_choice("> ", ["1", "2", "3", "0"])
 
-        print()
-        print("Options:")
-        print("  1. Segment words")
-        print("  2. Export SRT")
-        print("  3. Export TXT")
-        print("  0. Go back")
-        print()
-
-        choice = get_choice("Choice: ", ["1", "2", "3", "0"])
-
-        if choice == "1":
+        if c == "1":
             while True:
                 try:
-                    words = int(input("Words per segment: ").strip())
-                    if words <= 0:
-                        print("Enter a number greater than zero.")
-                        continue
-                    break
+                    n = int(input("Words per segment: ").strip())
+                    if n > 0:
+                        break
+                    print("Enter a number > 0.")
                 except ValueError:
                     print("Enter a valid number.")
-
-            segments = group_segments_by_words(segments, words)
-
-            # Save updated TXT
+            segments = group_words(segments, n)
             with open(txt_path, 'w', encoding='utf-8') as f:
-                for segment in segments:
-                    start = segment.get("start", 0)
-                    text = segment.get("text", "").strip()
-                    f.write(f"[{format_time(start)}] {text}\n")
-        elif choice == "2":
+                for seg in segments:
+                    f.write(f"[{fmt_time(seg.get('start', 0))}] {seg.get('text', '').strip()}\n")
+        elif c == "2":
             if segments:
                 export_srt(segments, srt_path)
-                print(f"SRT exported: {srt_path}")
+                print(f"Saved: {srt_path}")
             else:
-                print("Error: no data to export")
-            input("\nPress Enter to continue...")
-        elif choice == "3":
+                print("No data.")
+            input("\nPress Enter...")
+        elif c == "3":
             if segments:
                 export_txt(segments, txt_path)
-                print(f"TXT exported: {txt_path}")
+                print(f"Saved: {txt_path}")
             else:
-                print("Error: no data to export")
-            input("\nPress Enter to continue...")
-        elif choice == "0":
+                print("No data.")
+            input("\nPress Enter...")
+        elif c == "0":
             return
 
 
-def do_transcribe() -> None:
-    """Transcription flow."""
-    clear_screen()
-    print_header()
-    
-    # Select file
+def do_transcribe():
+    clear()
+    header()
     file_path = select_file()
     if not file_path:
         print("No file selected.")
-        input("\nPress Enter to continue...")
+        input("\nPress Enter...")
         return
 
     if not os.path.exists(file_path):
         print(f"File not found: {file_path}")
-        input("\nPress Enter to continue...")
+        input("\nPress Enter...")
         return
 
-    # Validate file extension
     ext = os.path.splitext(file_path)[1].lower()
     if ext not in get_supported_formats():
-        print(f"Unsupported format: {ext}")
-        print(f"Accepted formats: {', '.join(sorted(get_supported_formats()))}")
-        input("\nPress Enter to continue...")
+        print(f"Unsupported: {ext}")
+        print(f"Accepted: {', '.join(sorted(get_supported_formats()))}")
+        input("\nPress Enter...")
         return
 
-    # Show selected file
-    clear_screen()
-    print_header()
-    print(f"Selected file: {os.path.basename(file_path)}")
-    print(f"Path: {file_path}")
-    print()
+    clear()
+    header()
+    print(f"File: {os.path.basename(file_path)}\n")
 
-    # Transcribe with animation
-    print("Transcribing", end="", flush=True)
-    stop_event = threading.Event()
-    anim_thread = threading.Thread(target=animate_dots, args=(stop_event,))
-    anim_thread.start()
-    
+    stop = threading.Event()
+    t = threading.Thread(target=animate, args=(stop,))
+    t.start()
+
     try:
         result = transcribe(file_path)
-        stop_event.set()
-        anim_thread.join()
+        stop.set()
+        t.join()
         print("\rTranscribing... Done!    ")
     except TranscriptionError as e:
-        stop_event.set()
-        anim_thread.join()
+        stop.set()
+        t.join()
         print(f"\nError: {e}")
-        input("\nPress Enter to continue...")
+        input("\nPress Enter...")
         return
 
     if result:
-        # Save TXT to history folder
-        txt_path = save_history_txt(result, file_path)
-        
-        # Add to history
+        save_txt(result, file_path)
         filename = os.path.basename(file_path)
         duration = result.get("duration", 0)
         word_count = len(result.get("text", "").split())
-        detected_lang = result.get("language", "auto")
-        add_entry(filename, detected_lang, detected_lang, duration, word_count, file_path)
+        lang = result.get("language", "auto")
+        add_entry(filename, lang, lang, duration, word_count, file_path)
 
-        # Show result + post-transcription menu
-        clear_screen()
-        print_header()
-        print("Transcription Result")
-        print("=" * 60)
-        print()
-        
+        clear()
+        header()
         if result.get("segments"):
-            for segment in result["segments"]:
-                start = segment.get("start", 0)
-                text = segment.get("text", "").strip()
-                print(f"[{format_time(start)}] {text}")
+            show_segments(result["segments"])
         else:
             print(result.get("text", ""))
-        
-        print()
-        
-        post_transcript_menu(result, file_path)
+            print()
+
+        post_menu(result, file_path)
     else:
         print("Transcription failed.")
-        input("\nPress Enter to continue...")
+        input("\nPress Enter...")
 
 
-def main() -> None:
-    """Main CLI loop."""
+def main():
     while True:
-        print_header()
-        print_menu()
-
-        choice = get_choice("Choice: ", ["1", "2", "0"])
-
-        if choice == "1":
+        clear()
+        header()
+        menu()
+        c = get_choice("> ", ["1", "2", "0"])
+        if c == "1":
             do_transcribe()
-        elif choice == "2":
+        elif c == "2":
             show_history()
-        elif choice == "0":
-            print("\nGoodbye!")
+        elif c == "0":
+            print("Goodbye!")
             break
 
 
