@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """
-TranscribeCLI - Sistema de Transcrição de Áudio com Timestamps
-Usa Whisper Large V3 Turbo via Groq API.
+TranscribeCLI - Audio Transcription with Timestamps
+Uses Whisper Large V3 Turbo via Groq API.
 """
 import os
 import sys
+import time
+import threading
 from pathlib import Path
 
 # Adicionar diretório atual ao path para imports
@@ -15,67 +17,54 @@ from export_srt import export_srt
 from export_txt import export_txt
 from history import add_entry, list_entries, display_history_table
 
-# ─── Constantes ────────────────────────────────────────────────────────────────
+# ─── Constants ─────────────────────────────────────────────────────────────────
 
-TRANSCRIPTS_DIR = Path.home() / "Downloads" / "transcribercli"
+TRANSCRIPTS_DIR = Path(__file__).parent / "history"
 TRANSCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
 
-IDIOMAS = {
-    "auto": "Detectar automaticamente",
-    "pt": "Português",
-    "en": "Inglês",
-    "es": "Espanhol",
-    "fr": "Francês",
-    "de": "Alemão",
-    "it": "Italiano",
-    "zh": "Chinês",
-    "ja": "Japonês",
-    "ko": "Coreano",
-}
 
-
-# ─── Utilitários ──────────────────────────────────────────────────────────────
+# ─── Utilities ────────────────────────────────────────────────────────────────
 
 def clear_screen():
-    """Limpa a tela."""
+    """Clear the screen."""
     os.system('cls' if os.name == 'nt' else 'clear')
 
 
 def print_header():
-    """Imprime o cabeçalho."""
+    """Print the header."""
     clear_screen()
     print("=" * 60)
-    print("  TranscribeCLI - Transcrição de Áudio com Timestamps")
+    print("  TranscribeCLI - Audio Transcription with Timestamps")
     print("=" * 60)
     print()
 
 
 def print_menu():
-    """Imprime o menu principal."""
-    print("Opções:")
-    print("  1. Transcrever")
-    print("  2. Histórico")
-    print("  3. Sair")
+    """Print the main menu."""
+    print("Options:")
+    print("  1. Transcribe")
+    print("  2. History")
+    print("  0. Quit")
     print()
 
 
 def get_choice(prompt, valid_choices):
-    """Obtém uma escolha válida do usuário."""
+    """Get a valid choice from the user."""
     while True:
         choice = input(prompt).strip()
         if choice in valid_choices:
             return choice
-        print(f"Opção inválida. Escolha uma de: {', '.join(valid_choices)}")
+        print(f"Invalid option. Choose one of: {', '.join(valid_choices)}")
 
 
 def select_file() -> str | None:
-    """Abre o seletor de arquivo.
+    """Open the file selector.
     
     Returns:
-        Caminho do arquivo selecionado ou None.
+        Selected file path or None.
     """
-    print("\nSelecione um arquivo de áudio...")
-    print(f"Formatos suportados: {', '.join(sorted(get_supported_formats()))}")
+    print("\nSelect an audio file...")
+    print(f"Supported formats: {', '.join(sorted(get_supported_formats()))}")
     print()
 
     try:
@@ -84,70 +73,30 @@ def select_file() -> str | None:
         root = tk.Tk()
         root.withdraw()
         file_path = filedialog.askopenfilename(
-            title="Selecione um arquivo de áudio",
+            title="Select an audio file",
             filetypes=[
-                ("Arquivos de áudio", " ".join(f"*{ext}" for ext in get_supported_formats())),
-                ("Todos os arquivos", "*.*")
+                ("Audio files", " ".join(f"*{ext}" for ext in get_supported_formats())),
+                ("All files", "*.*")
             ]
         )
         root.destroy()
         return file_path if file_path else None
     except ImportError:
-        file_path = input("Caminho do arquivo: ").strip()
+        file_path = input("File path: ").strip()
         return file_path if file_path else None
 
 
-def select_language(prompt: str, default: str = "auto") -> str:
-    """Seleciona um idioma.
-    
-    Args:
-        prompt: Texto a exibir para o usuário.
-        default: Idioma padrão se o usuário não digitar nada.
-    
-    Returns:
-        Código do idioma selecionado.
-    """
-    print(f"\n{prompt}")
-    for code, name in IDIOMAS.items():
-        print(f"  {code:<6} - {name}")
-    print()
-
-    while True:
-        lang = input(f"Idioma [{default}]: ").strip().lower()
-        if not lang:
-            return default
-        if lang in IDIOMAS:
-            return lang
-        print(f"Idioma inválido. Escolha uma das opções acima.")
-
-
-def display_transcript(result: dict) -> None:
-    """Exibe o resultado da transcrição.
-    
-    Args:
-        result: Dicionário com dados da transcrição.
-    """
-    if not result:
-        return
-
-    print("\n" + "=" * 60)
-    print("  Resultado da Transcrição")
-    print("=" * 60)
-    print()
-
-    if result.get("segments"):
-        for segment in result["segments"]:
-            start = segment.get("start", 0)
-            text = segment.get("text", "").strip()
-            print(f"[{format_time(start)}] {text}")
-    else:
-        print(result.get("text", ""))
-
-    print()
+def animate_dots(stop_event):
+    """Animate dots during transcription."""
+    dots = 0
+    while not stop_event.is_set():
+        print(f"\rTranscribing{'.' * dots}   ", end="", flush=True)
+        dots = (dots + 1) % 4
+        time.sleep(0.5)
 
 
 def format_time(seconds):
-    """Formata segundos em HH:MM:SS."""
+    """Format seconds to HH:MM:SS."""
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
     secs = int(seconds % 60)
@@ -155,14 +104,14 @@ def format_time(seconds):
 
 
 def group_segments_by_words(segments, words_per_group):
-    """Agrupa segmentos por quantidade de palavras.
+    """Group segments by word count.
     
     Args:
-        segments: Lista de segmentos com start, end, text.
-        words_per_group: Quantidade de palavras por grupo.
+        segments: List of segments with start, end, text.
+        words_per_group: Number of words per group.
     
     Returns:
-        Lista de segmentos agrupados.
+        List of grouped segments.
     """
     if not segments or words_per_group <= 0:
         return segments
@@ -191,9 +140,8 @@ def group_segments_by_words(segments, words_per_group):
                 current_words = []
                 current_start = current_end
     
-    # Adicionar palavras restantes
+    # Add remaining words
     if current_words:
-        # Garantir que end > start (evita erro de validação)
         if current_end <= current_start:
             current_end = current_start + 0.01
         grouped.append({
@@ -202,7 +150,7 @@ def group_segments_by_words(segments, words_per_group):
             "text": " ".join(current_words)
         })
     
-    # Corrigir todos os segmentos onde start == end
+    # Fix all segments where start == end
     for seg in grouped:
         if seg["end"] <= seg["start"]:
             seg["end"] = seg["start"] + 0.01
@@ -210,98 +158,127 @@ def group_segments_by_words(segments, words_per_group):
     return grouped
 
 
-def display_grouped_preview(grouped_segments):
-    """Exibe preview da transcrição agrupada."""
-    print("\n" + "=" * 60)
-    print("  Preview da Transcrição Agrupada")
-    print("=" * 60)
-    print()
+def save_history_txt(result, file_path):
+    """Save TXT to the history folder in the script directory."""
+    base_name = Path(file_path).stem
+    output_path = TRANSCRIPTS_DIR / f"{base_name}.txt"
     
-    for segment in grouped_segments:
-        start = segment.get("start", 0)
-        text = segment.get("text", "").strip()
-        print(f"[{format_time(start)}] {text}")
+    segments = result.get("segments", [])
+    with open(output_path, 'w', encoding='utf-8') as f:
+        for segment in segments:
+            start = segment.get("start", 0)
+            text = segment.get("text", "").strip()
+            f.write(f"[{format_time(start)}] {text}\n")
     
-    print()
+    return output_path
 
 
 def post_transcript_menu(result, file_path):
-    """Menu pós-transcrição.
-    
-    Args:
-        result: Dicionário com dados da transcrição.
-        file_path: Caminho do arquivo de áudio original.
-    """
+    """Post-transcription menu."""
     grouped_segments = result.get("segments", []) if result else []
     base_name = Path(file_path).stem
     
     while True:
-        clear_screen()
-        print_header()
-        print("Opções pós-transcrição:")
-        print("  1. Configurar palavras por timestamp")
-        print("  2. Exportar SRT")
-        print("  3. Exportar TXT")
-        print("  4. Voltar ao menu principal")
+        print("Options:")
+        print("  1. Segment words")
+        print("  2. Export SRT")
+        print("  3. Export TXT")
+        print("  0. Go to main menu")
         print()
 
-        choice = get_choice("Escolha: ", ["1", "2", "3", "4"])
+        choice = get_choice("Choice: ", ["1", "2", "3", "0"])
 
         if choice == "1":
+            # Segment words - SAME SCREEN
+            clear_screen()
+            print_header()
+            print("Segment Words")
+            print("=" * 60)
+            print()
+            
+            # Show current preview
+            if grouped_segments:
+                print("Current segmentation:")
+                for segment in grouped_segments:
+                    start = segment.get("start", 0)
+                    text = segment.get("text", "").strip()
+                    print(f"[{format_time(start)}] {text}")
+                print()
+            
             while True:
                 try:
-                    words = int(input("Quantas palavras por timestamp? ").strip())
+                    words = int(input("Words per segment: ").strip())
                     if words <= 0:
-                        print("Digite um número maior que zero.")
+                        print("Enter a number greater than zero.")
                         continue
                     break
                 except ValueError:
-                    print("Digite um número válido.")
+                    print("Enter a valid number.")
+            
             grouped_segments = group_segments_by_words(result["segments"], words)
+            
+            # Save updated TXT
+            txt_path = TRANSCRIPTS_DIR / f"{base_name}.txt"
+            with open(txt_path, 'w', encoding='utf-8') as f:
+                for segment in grouped_segments:
+                    start = segment.get("start", 0)
+                    text = segment.get("text", "").strip()
+                    f.write(f"[{format_time(start)}] {text}\n")
+            
+            # Return to point 3 (preview + options)
             clear_screen()
             print_header()
-            display_grouped_preview(grouped_segments)
-            print(f"Configurado: {words} palavras por timestamp")
-            input("\nPressione Enter para continuar...")
+            print("Transcription Result")
+            print("=" * 60)
+            print()
+            
+            for segment in grouped_segments:
+                start = segment.get("start", 0)
+                text = segment.get("text", "").strip()
+                print(f"[{format_time(start)}] {text}")
+            
+            print()
+            continue
+            
         elif choice == "2":
             if grouped_segments:
                 output_path = TRANSCRIPTS_DIR / f"{base_name}.srt"
                 export_srt(grouped_segments, output_path)
-                print(f"SRT exportado: {output_path}")
+                print(f"SRT exported: {output_path}")
             else:
-                print("Erro: sem dados para exportar")
-            input("\nPressione Enter para continuar...")
+                print("Error: no data to export")
+            input("\nPress Enter to continue...")
         elif choice == "3":
             if grouped_segments:
                 output_path = TRANSCRIPTS_DIR / f"{base_name}.txt"
                 export_txt(grouped_segments, output_path)
-                print(f"TXT exportado: {output_path}")
+                print(f"TXT exported: {output_path}")
             else:
-                print("Erro: sem dados para exportar")
-            input("\nPressione Enter para continuar...")
-        elif choice == "4":
+                print("Error: no data to export")
+            input("\nPress Enter to continue...")
+        elif choice == "0":
             break
 
 
 def show_history() -> None:
-    """Mostra o histórico de transcrições."""
+    """Show transcription history."""
     clear_screen()
     print_header()
-    print("Histórico de Transcrições")
+    print("Transcription History")
     print("=" * 60)
     print()
 
     entries = list_entries()
     if not entries:
-        print("Nenhuma transcrição encontrada.")
-        input("\nPressione Enter para continuar...")
+        print("No transcriptions found.")
+        input("\nPress Enter to continue...")
         return
 
     display_history_table(entries)
     print()
 
-    # Permitir selecionar um item
-    choice = input("Selecione um número para ver detalhes (ou Enter para voltar): ").strip()
+    # Allow selecting an item
+    choice = input("Select a number to view details (or Enter to go back): ").strip()
     if not choice:
         return
 
@@ -310,151 +287,176 @@ def show_history() -> None:
         if 0 <= idx < len(entries):
             show_history_detail(entries[idx])
         else:
-            print("Número inválido.")
-            input("\nPressione Enter para continuar...")
+            print("Invalid number.")
+            input("\nPress Enter to continue...")
     except ValueError:
-        print("Entrada inválida.")
-        input("\nPressione Enter para continuar...")
+        print("Invalid input.")
+        input("\nPress Enter to continue...")
 
 
 def show_history_detail(entry: dict) -> None:
-    """Mostra detalhes de uma entrada do histórico."""
+    """Show details of a history entry."""
     clear_screen()
     print_header()
-    print("Detalhes da Transcrição")
+    print("Transcription Details")
     print("=" * 60)
     print()
 
-    print(f"Arquivo: {entry.get('filename', 'N/A')}")
-    print(f"Data: {entry.get('date', 'N/A')[:19].replace('T', ' ')}")
-    print(f"Idioma: {entry.get('source_language', 'N/A')}")
-    print(f"Duração: {int(entry.get('duration', 0) // 60)}:{int(entry.get('duration', 0) % 60):02d}")
-    print(f"Palavras: {entry.get('word_count', 0)}")
-    print(f"Caminho: {entry.get('file_path', 'N/A')}")
+    print(f"File: {entry.get('filename', 'N/A')}")
+    print(f"Date: {entry.get('date', 'N/A')[:19].replace('T', ' ')}")
+    print(f"Language: {entry.get('source_language', 'N/A')}")
+    print(f"Duration: {int(entry.get('duration', 0) // 60)}:{int(entry.get('duration', 0) % 60):02d}")
+    print(f"Words: {entry.get('word_count', 0)}")
+    print(f"Path: {entry.get('file_path', 'N/A')}")
     print()
 
-    # Verificar se o arquivo de transcrição existe
+    # Check if transcription file exists
     file_path = entry.get('file_path', '')
     base_name = Path(file_path).stem if file_path else ''
     srt_path = TRANSCRIPTS_DIR / f"{base_name}.srt"
     txt_path = TRANSCRIPTS_DIR / f"{base_name}.txt"
 
     if srt_path.exists() or txt_path.exists():
-        print("Opções:")
-        print("  1. Ver preview da transcrição")
-        print("  2. Exportar SRT")
-        print("  3. Exportar TXT")
-        print("  4. Voltar")
+        print("Options:")
+        print("  1. View transcription preview")
+        print("  2. Export SRT")
+        print("  3. Export TXT")
+        print("  0. Go back")
         print()
 
-        choice = get_choice("Escolha: ", ["1", "2", "3", "4"])
+        choice = get_choice("Choice: ", ["1", "2", "3", "0"])
 
         if choice == "1":
-            # Mostrar preview do arquivo TXT se existir
             if txt_path.exists():
                 clear_screen()
                 print_header()
-                print("Preview da Transcrição")
+                print("Transcription Preview")
                 print("=" * 60)
                 print()
                 with open(txt_path, 'r', encoding='utf-8') as f:
                     print(f.read())
-                input("\nPressione Enter para continuar...")
+                input("\nPress Enter to continue...")
             else:
-                print("Arquivo TXT não encontrado.")
-                input("\nPressione Enter para continuar...")
+                print("TXT file not found.")
+                input("\nPress Enter to continue...")
         elif choice == "2":
             if srt_path.exists():
-                print(f"SRT já existe: {srt_path}")
+                print(f"SRT already exists: {srt_path}")
             else:
-                print("SRT não encontrado. Transcreva novamente para gerar.")
-            input("\nPressione Enter para continuar...")
+                print("SRT not found. Transcribe again to generate.")
+            input("\nPress Enter to continue...")
         elif choice == "3":
             if txt_path.exists():
-                print(f"TXT já existe: {txt_path}")
+                print(f"TXT already exists: {txt_path}")
             else:
-                print("TXT não encontrado. Transcreva novamente para gerar.")
-            input("\nPressione Enter para continuar...")
-        elif choice == "4":
+                print("TXT not found. Transcribe again to generate.")
+            input("\nPress Enter to continue...")
+        elif choice == "0":
             return
     else:
-        print("Arquivos de transcrição não encontrados.")
-        print("Transcreva novamente para gerar os arquivos.")
-        input("\nPressione Enter para continuar...")
+        print("Transcription files not found.")
+        print("Transcribe again to generate the files.")
+        input("\nPress Enter to continue...")
 
 
 def do_transcribe() -> None:
-    """Fluxo de transcrição."""
+    """Transcription flow."""
     clear_screen()
     print_header()
     
-    # Selecionar arquivo
+    # Select file
     file_path = select_file()
     if not file_path:
-        print("Nenhum arquivo selecionado.")
-        input("\nPressione Enter para continuar...")
+        print("No file selected.")
+        input("\nPress Enter to continue...")
         return
 
     if not os.path.exists(file_path):
-        print(f"Arquivo não encontrado: {file_path}")
-        input("\nPressione Enter para continuar...")
+        print(f"File not found: {file_path}")
+        input("\nPress Enter to continue...")
         return
 
-    # Validar extensão do arquivo
+    # Validate file extension
     ext = os.path.splitext(file_path)[1].lower()
     if ext not in get_supported_formats():
-        print(f"Formato não suportado: {ext}")
-        print(f"Formatos aceitos: {', '.join(sorted(get_supported_formats()))}")
-        input("\nPressione Enter para continuar...")
+        print(f"Unsupported format: {ext}")
+        print(f"Accepted formats: {', '.join(sorted(get_supported_formats()))}")
+        input("\nPress Enter to continue...")
         return
 
-    # Mostrar arquivo selecionado
+    # Show selected file
     clear_screen()
     print_header()
-    print(f"Arquivo selecionado: {os.path.basename(file_path)}")
-    print(f"Caminho: {file_path}")
-    print("\nTranscrevendo com detecção automática de idioma...")
+    print(f"Selected file: {os.path.basename(file_path)}")
+    print(f"Path: {file_path}")
+    print()
+
+    # Transcribe with animation
+    print("Transcribing", end="", flush=True)
+    stop_event = threading.Event()
+    anim_thread = threading.Thread(target=animate_dots, args=(stop_event,))
+    anim_thread.start()
+    
     try:
         result = transcribe(file_path)
+        stop_event.set()
+        anim_thread.join()
+        print("\rTranscribing... Done!    ")
     except TranscriptionError as e:
-        print(f"Erro: {e}")
-        input("\nPressione Enter para continuar...")
+        stop_event.set()
+        anim_thread.join()
+        print(f"\nError: {e}")
+        input("\nPress Enter to continue...")
         return
 
     if result:
-        clear_screen()
-        print_header()
-        display_transcript(result)
-
-        # Adicionar ao histórico
+        # Save TXT to history folder
+        txt_path = save_history_txt(result, file_path)
+        
+        # Add to history
         filename = os.path.basename(file_path)
         duration = result.get("duration", 0)
         word_count = len(result.get("text", "").split())
         detected_lang = result.get("language", "auto")
         add_entry(filename, detected_lang, detected_lang, duration, word_count, file_path)
 
-        input("\nPressione Enter para continuar...")
+        # Show result + post-transcription menu
+        clear_screen()
+        print_header()
+        print("Transcription Result")
+        print("=" * 60)
+        print()
+        
+        if result.get("segments"):
+            for segment in result["segments"]:
+                start = segment.get("start", 0)
+                text = segment.get("text", "").strip()
+                print(f"[{format_time(start)}] {text}")
+        else:
+            print(result.get("text", ""))
+        
+        print()
+        
         post_transcript_menu(result, file_path)
     else:
-        print("Falha na transcrição.")
-        input("\nPressione Enter para continuar...")
+        print("Transcription failed.")
+        input("\nPress Enter to continue...")
 
 
 def main() -> None:
-    """Loop principal da CLI."""
+    """Main CLI loop."""
     while True:
         print_header()
         print_menu()
 
-        choice = get_choice("Escolha: ", ["1", "2", "3"])
+        choice = get_choice("Choice: ", ["1", "2", "0"])
 
         if choice == "1":
             do_transcribe()
         elif choice == "2":
             show_history()
-            input("\nPressione Enter para continuar...")
-        elif choice == "3":
-            print("\nAté logo!")
+        elif choice == "0":
+            print("\nGoodbye!")
             break
 
 
