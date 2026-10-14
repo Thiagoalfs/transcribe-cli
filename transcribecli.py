@@ -295,30 +295,53 @@ def show_history() -> None:
 
 
 def show_history_detail(entry: dict) -> None:
-    """Show details of a history entry."""
-    clear_screen()
-    print_header()
-    print("Transcription Details")
-    print("=" * 60)
-    print()
-
-    print(f"File: {entry.get('filename', 'N/A')}")
-    print(f"Date: {entry.get('date', 'N/A')[:19].replace('T', ' ')}")
-    print(f"Language: {entry.get('source_language', 'N/A')}")
-    print(f"Duration: {int(entry.get('duration', 0) // 60)}:{int(entry.get('duration', 0) % 60):02d}")
-    print(f"Words: {entry.get('word_count', 0)}")
-    print(f"Path: {entry.get('file_path', 'N/A')}")
-    print()
-
-    # Check if transcription file exists
+    """Show transcription preview and options directly."""
     file_path = entry.get('file_path', '')
     base_name = Path(file_path).stem if file_path else ''
-    srt_path = TRANSCRIPTS_DIR / f"{base_name}.srt"
     txt_path = TRANSCRIPTS_DIR / f"{base_name}.txt"
+    srt_path = TRANSCRIPTS_DIR / f"{base_name}.srt"
 
-    if srt_path.exists() or txt_path.exists():
+    if not txt_path.exists() and not srt_path.exists():
+        clear_screen()
+        print_header()
+        print("Transcription files not found.")
+        print("Transcribe again to generate the files.")
+        input("\nPress Enter to continue...")
+        return
+
+    # Load segments from TXT or SRT
+    segments = []
+    if txt_path.exists():
+        with open(txt_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith('[') and '] ' in line:
+                    timestamp_end = line.index('] ')
+                    timestamp = line[1:timestamp_end]
+                    text = line[timestamp_end + 2:]
+                    # Parse HH:MM:SS to seconds
+                    parts = timestamp.split(':')
+                    seconds = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                    segments.append({"start": seconds, "end": seconds + 1, "text": text})
+
+    while True:
+        clear_screen()
+        print_header()
+        print("Transcription Preview")
+        print("=" * 60)
+        print()
+
+        if segments:
+            for segment in segments:
+                start = segment.get("start", 0)
+                text = segment.get("text", "").strip()
+                print(f"[{format_time(start)}] {text}")
+        else:
+            print("No preview available.")
+
+        print()
         print("Options:")
-        print("  1. View transcription preview")
+        print("  1. Segment words")
         print("  2. Export SRT")
         print("  3. Export TXT")
         print("  0. Go back")
@@ -327,36 +350,40 @@ def show_history_detail(entry: dict) -> None:
         choice = get_choice("Choice: ", ["1", "2", "3", "0"])
 
         if choice == "1":
-            if txt_path.exists():
-                clear_screen()
-                print_header()
-                print("Transcription Preview")
-                print("=" * 60)
-                print()
-                with open(txt_path, 'r', encoding='utf-8') as f:
-                    print(f.read())
-                input("\nPress Enter to continue...")
-            else:
-                print("TXT file not found.")
-                input("\nPress Enter to continue...")
+            while True:
+                try:
+                    words = int(input("Words per segment: ").strip())
+                    if words <= 0:
+                        print("Enter a number greater than zero.")
+                        continue
+                    break
+                except ValueError:
+                    print("Enter a valid number.")
+
+            segments = group_segments_by_words(segments, words)
+
+            # Save updated TXT
+            with open(txt_path, 'w', encoding='utf-8') as f:
+                for segment in segments:
+                    start = segment.get("start", 0)
+                    text = segment.get("text", "").strip()
+                    f.write(f"[{format_time(start)}] {text}\n")
         elif choice == "2":
-            if srt_path.exists():
-                print(f"SRT already exists: {srt_path}")
+            if segments:
+                export_srt(segments, srt_path)
+                print(f"SRT exported: {srt_path}")
             else:
-                print("SRT not found. Transcribe again to generate.")
+                print("Error: no data to export")
             input("\nPress Enter to continue...")
         elif choice == "3":
-            if txt_path.exists():
-                print(f"TXT already exists: {txt_path}")
+            if segments:
+                export_txt(segments, txt_path)
+                print(f"TXT exported: {txt_path}")
             else:
-                print("TXT not found. Transcribe again to generate.")
+                print("Error: no data to export")
             input("\nPress Enter to continue...")
         elif choice == "0":
             return
-    else:
-        print("Transcription files not found.")
-        print("Transcribe again to generate the files.")
-        input("\nPress Enter to continue...")
 
 
 def do_transcribe() -> None:
