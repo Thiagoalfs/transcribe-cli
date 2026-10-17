@@ -50,32 +50,51 @@ def validate_segments(segments: list[Segment]) -> None:
             raise ValueError(f"Segmento {i} contém timestamp negativo")
 
 
-def generate_txt_content(segments: list[Segment]) -> str:
-    """Gera o conteúdo TXT formatado a partir dos segmentos.
+def generate_txt_content(segments: list[Segment], full_text: str | None = None) -> str:
+    """Gera o conteúdo TXT formatado a partir dos segmentos em formato inline.
 
     Args:
         segments: Lista de segmentos de transcrição.
+        full_text: Texto completo contínuo da transcrição (opcional).
 
     Returns:
-        Conteúdo formatado pronto para escrita em arquivo.
+        Conteúdo formatado pronto para escrita em arquivo em estilo inline.
     """
     validate_segments(segments)
 
-    lines: list[str] = []
+    if not full_text:
+        full_text = " ".join(seg.get("text", "").strip() for seg in segments if seg.get("text"))
+
+    inline_segments = []
     for segment in segments:
         timestamp = format_txt_time(segment["start"])
         text = segment.get("text", "").strip()
-        lines.append(TIMESTAMP_FORMAT.format(timestamp=timestamp, text=text))
+        if text:
+            inline_segments.append(f"[{timestamp}] {text}")
 
-    return "\n".join(lines) + "\n"
+    lines = [
+        "=== Transcricao ===",
+        full_text.strip(),
+        "",
+        "=== Segmentos (Inline) ===",
+        "  ".join(inline_segments),
+        "",
+    ]
+
+    return "\n".join(lines)
 
 
-def export_txt(segments: list[Segment], output_path: str | Path) -> Path:
-    """Exporta segmentos de transcrição como arquivo TXT.
+def export_txt(
+    segments: list[Segment],
+    output_path: str | Path,
+    full_text: str | None = None,
+) -> Path:
+    """Exporta segmentos de transcrição como arquivo TXT em formato inline.
 
     Args:
         segments: Lista de segmentos, cada um com 'start', 'end' e 'text'.
         output_path: Caminho do arquivo de saída.
+        full_text: Texto completo contínuo (opcional).
 
     Returns:
         Caminho do arquivo criado.
@@ -94,7 +113,7 @@ def export_txt(segments: list[Segment], output_path: str | Path) -> Path:
     if output.suffix != OUTPUT_EXTENSION:
         output = output.with_suffix(OUTPUT_EXTENSION)
 
-    content = generate_txt_content(segments)
+    content = generate_txt_content(segments, full_text=full_text)
 
     try:
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -103,3 +122,4 @@ def export_txt(segments: list[Segment], output_path: str | Path) -> Path:
         raise OSError(f"Erro ao escrever arquivo '{output}': {e}") from e
 
     return output
+

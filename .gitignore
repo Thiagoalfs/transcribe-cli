@@ -40,5 +40,7 @@ Thumbs.db
 
 # TurboTranscribe
 transcripts/
+history/
 *.srt
 *.txt
+*.json

@@ -24,10 +24,13 @@ def format_srt_time(seconds: float) -> str:
         >>> format_srt_time(61.5)
         '00:01:01,500'
     """
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    millis = int(round((seconds % 1) * 1000))
+    total_millis = max(0, int(round(seconds * 1000)))
+    hours = total_millis // 3_600_000
+    total_millis %= 3_600_000
+    minutes = total_millis // 60_000
+    total_millis %= 60_000
+    secs = total_millis // 1_000
+    millis = total_millis % 1_000
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 

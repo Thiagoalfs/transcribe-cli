@@ -119,7 +119,7 @@ def load_api_key() -> str:
     )
 
 
-def build_request_data(language: str, target_language: Optional[str] = None) -> dict:
+def build_request_data(language: str, target_language: Optional[str] = None) -> list[tuple[str, str]]:
     """
     Constrói os dados da requisição para a API do Groq.
 
@@ -128,19 +128,21 @@ def build_request_data(language: str, target_language: Optional[str] = None) -> 
         target_language: Código do idioma de destino (para tradução).
 
     Returns:
-        Dicionário com os dados da requisição.
+        Lista de tuplas chave-valor para a requisição multipart/form-data.
     """
-    data = {
-        "model": GROQ_MODEL,
-        "response_format": RESPONSE_FORMAT,
-    }
+    data = [
+        ("model", GROQ_MODEL),
+        ("response_format", RESPONSE_FORMAT),
+        ("timestamp_granularities[]", "word"),
+        ("timestamp_granularities[]", "segment"),
+    ]
 
     if language != DEFAULT_LANGUAGE:
-        data["language"] = language
+        data.append(("language", language))
 
     # Se target_language for diferente de language, ativa tradução
     if target_language and target_language != language:
-        data["translate"] = True
+        data.append(("translate", "true"))
 
     return data
 
@@ -274,9 +276,25 @@ def parse_transcription_response(response: dict) -> dict:
 
     full_text = " ".join(s["text"] for s in segments)
 
+    # Extrai timestamps por palavra se disponíveis
+    raw_words = response.get("words", [])
+    words = []
+    if isinstance(raw_words, list):
+        for w in raw_words:
+            if not isinstance(w, dict):
+                continue
+            word_text = w.get("word", "").strip()
+            if word_text:
+                words.append({
+                    "word": word_text,
+                    "start": float(w.get("start", 0.0)),
+                    "end": float(w.get("end", 0.0)),
+                })
+
     return {
         "text": full_text,
         "segments": segments,
+        "words": words,
         "language": response.get("language"),
         "duration": response.get("duration"),
     }
